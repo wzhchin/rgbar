@@ -6,7 +6,7 @@ use super::PowerStatus::{Charging, Discharging, NotCharging, Unknown};
 
 use super::{BatteryInfo, PowerStatus};
 
-static POWER_INFO_PATH: &str = "/sys/class/power_supply/BAT0/uevent";
+static POWER_INFO_PATH: &str = "/sys/class/power_supply/BATT/uevent";
 
 pub fn get_battery_info() -> AResult<BatteryInfo> {
     read_event(POWER_INFO_PATH)
