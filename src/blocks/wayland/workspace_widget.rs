@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::{borrow::Cow, collections::HashMap};
 
-use chin_wayland_utils::{WLWorkspace, WLWorkspaceBehaiver, WLWorkspaceId};
 use chin_tools::AResult;
+use chin_wayland_utils::{WLWorkspace, WLWorkspaceBehaiver, WLWorkspaceId};
 pub use gtk::traits::{BoxExt, LabelExt, StyleContextExt, WidgetExt};
+use log::error;
 
 #[derive(Debug, PartialEq)]
 pub struct WorkspaceWidget {
@@ -22,6 +23,7 @@ pub struct WorkspaceContainer {
     indicator: gtk::Label,
     output_name: String,
     current_workspace_id: Option<WLWorkspaceId>,
+    dirty: bool,
 }
 
 impl WorkspaceContainer {
@@ -41,25 +43,32 @@ impl WorkspaceContainer {
             output_name,
             current_workspace_id: Default::default(),
             indicator,
+            dirty: true,
         })
     }
 
     pub fn on_workspace_overwrite(&mut self, workspace: &WLWorkspace) {
-        if workspace.is_focused {
-            self.current_workspace_id.replace(workspace.id);
+        if workspace
+            .get_monitor_id()
+            .is_some_and(|n| n == &self.output_name)
+        {
+            if workspace.is_active() {
+                self.current_workspace_id
+                    .replace(workspace.get_id().clone());
+            }
+            self.workspace_widget_map.insert(
+                workspace.get_id().to_owned(),
+                WorkspaceWidget::new(workspace.clone()),
+            );
+            self.dirty = true
         }
-        self.workspace_widget_map
-            .insert(workspace.get_id(), WorkspaceWidget::new(workspace.clone()));
-
-        self.update_view();
     }
 
     pub fn on_workspace_delete(&mut self, id: &WLWorkspaceId) {
         self.workspace_widget_map.remove(id);
-        self.update_view();
     }
 
-    pub fn update_view(&self) {
+    pub fn update_view(&mut self) {
         let indicator = self
             .current_workspace_id
             .and_then(|e| {
@@ -71,10 +80,11 @@ impl WorkspaceContainer {
                     }
                 })
             })
-            .map_or("?".to_owned(), |e| e.workspace.get_name());
+            .map(|w| w.workspace.get_name())
+            .unwrap_or(Cow::Borrowed("?"));
         self.indicator.set_label(
             format!(
-                "{}/{}",
+                "{} / {}",
                 indicator,
                 self.workspace_widget_map
                     .iter()
@@ -83,5 +93,6 @@ impl WorkspaceContainer {
             )
             .as_str(),
         );
+        self.dirty = false;
     }
 }

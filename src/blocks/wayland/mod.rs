@@ -1,11 +1,10 @@
 pub mod window_widget;
 pub mod workspace_widget;
 
-use chin_wayland_utils::{WLCompositor, WLCompositorBehavier, WLEvent};
+use chin_wayland_utils::{WLCompositor, WLCompositorBehavier, WLEvent, WLWindowBehaiver};
 
-use window_widget::WindowContainerManager;
-use workspace_widget::WorkspaceContainer;
-
+use crate::blocks::wayland::window_widget::WindowContainer;
+use crate::blocks::wayland::workspace_widget::WorkspaceContainer;
 use crate::datahodler::channel::DualChannel;
 use crate::window::WidgetShareInfo;
 
@@ -67,7 +66,7 @@ impl Block for WaylandBlock {
 
         let mut workspace_container = WorkspaceContainer::new(output_name.clone()).unwrap();
 
-        let mut window_container = WindowContainerManager::new().unwrap();
+        let mut window_container = WindowContainer::new(output_name.clone());
 
         let holder = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
@@ -76,7 +75,7 @@ impl Block for WaylandBlock {
 
         holder.pack_start(&workspace_container.holder, false, false, 0);
 
-        holder.pack_start(&window_container.stack, false, false, 0);
+        holder.pack_start(&window_container.holder, false, false, 0);
 
         let mut receiver = self.dualchannel.get_out_receiver().clone();
 
@@ -91,11 +90,10 @@ impl Block for WaylandBlock {
                                 match event {
                                     WLEvent::WorkspaceDelete(id) => {
                                         workspace_container.on_workspace_delete(&id);
-                                        window_container.on_workspace_delete(&id);
                                     }
                                     WLEvent::WorkspaceOverwrite(workspace) => {
                                         workspace_container.on_workspace_overwrite(&workspace);
-                                        window_container.on_workspace_overwrite(&workspace);
+                                        window_container.on_workspace_change(&workspace);
                                     }
                                     WLEvent::WindowDelete(id) => {
                                         window_container.on_window_delete(&id);

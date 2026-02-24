@@ -1,7 +1,8 @@
-use chin_tools::AResult;
+use chin_wayland_utils::WLWorkspaceBehaiver;
 use chin_wayland_utils::{WLWindow, WLWindowBehaiver, WLWindowId, WLWorkspace, WLWorkspaceId};
+use gtk::glib::{gformat, GString};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 
 use crate::prelude::*;
@@ -10,7 +11,7 @@ use crate::util;
 #[derive(Debug, PartialEq)]
 pub struct WindowWidget {
     pub window: WLWindow,
-    pub gbox: gtk::Box,
+    pub widget: gtk::Box,
     pub title: Label,
     pub dirty: bool,
 }
@@ -46,6 +47,7 @@ impl WindowWidget {
         title.set_line_wrap(true);
         title.set_line_wrap_mode(WrapMode::Char);
 
+        container.set_widget_name(&window.get_id().to_string());
         container.pack_start(&event_box, false, false, 0);
         container.pack_start(&title, false, false, 0);
         container.show_all();
@@ -71,7 +73,7 @@ impl WindowWidget {
 
         Self {
             window,
-            gbox: container,
+            widget: container,
             title,
             dirty: true,
         }
@@ -100,22 +102,22 @@ impl WindowWidget {
                         .map_or("Unknown Title", |v| v),
                 );
                 self.title.show();
-                self.gbox.style_context().add_class("wmw-focus")
+                self.widget.style_context().add_class("wmw-focus")
             } else {
                 self.title.set_text("");
                 self.title.hide();
-                self.gbox.style_context().remove_class("wmw-focus")
+                self.widget.style_context().remove_class("wmw-focus")
             }
             if self.window.is_floating() {
-                self.gbox.style_context().add_class("wmw-floating")
+                self.widget.style_context().add_class("wmw-floating")
             } else {
-                self.gbox.style_context().remove_class("wmw-floating")
+                self.widget.style_context().remove_class("wmw-floating")
             }
 
             if self.window.is_urgent() {
-                self.gbox.style_context().add_class("wmw-urgent")
+                self.widget.style_context().add_class("wmw-urgent")
             } else {
-                self.gbox.style_context().remove_class("wmw-urgent")
+                self.widget.style_context().remove_class("wmw-urgent")
             }
             self.dirty = false;
         }
@@ -126,16 +128,17 @@ impl WindowWidget {
 #[allow(dead_code)]
 pub struct WindowContainer {
     pub workspace_id: WLWorkspaceId,
-    pub widget_map: HashMap<WLWindowId, WindowWidget>,
-    pub gbox: gtk::Box,
+    pub widget_map: HashMap<GString, WindowWidget>,
+    pub holder: gtk::Box,
     focused_id: Option<WLWindowId>,
     icon_loader: GtkIconLoader,
     dirty: bool,
     to_remove: Vec<gtk::Box>,
+    output_name: String,
 }
 
 impl WindowContainer {
-    pub fn new(workspace_id: WLWindowId) -> Self {
+    pub fn new(output_name: String) -> Self {
         let container = gtk::Box::builder()
             .orientation(gtk::Orientation::Horizontal)
             .build();
@@ -144,138 +147,88 @@ impl WindowContainer {
         container.show_all();
         Self {
             widget_map: Default::default(),
-            gbox: container,
+            holder: container,
             focused_id: None,
             icon_loader: util::gtk_icon_loader::GtkIconLoader::new(),
-            workspace_id,
             dirty: true,
             to_remove: Default::default(),
-        }
-    }
-
-    pub fn on_window_overwrite(&mut self, window: WLWindow) -> bool {
-        if let Some(win) = self.widget_map.get_mut(&window.get_id()) {
-            let dirty = win.update_data(window);
-            self.dirty = self.dirty || dirty;
-            self.dirty
-        } else {
-            let ww = WindowWidget::new(window, &self.icon_loader);
-            self.gbox.add(&ww.gbox);
-            self.widget_map.insert(ww.get_id(), ww);
-
-            true
-        }
-    }
-
-    pub fn on_window_delete(&mut self, window: WLWindowId) -> bool {
-        if let Some(win) = self.widget_map.remove(&window) {
-            self.dirty = true;
-            self.to_remove.push(win.gbox);
-            return true;
-        }
-        false
-    }
-
-    pub fn update_view(&mut self) {
-        if self.dirty {
-            let mut wws: Vec<&mut WindowWidget> =
-                self.widget_map.iter_mut().map(|(_, w)| w).collect();
-
-            for r in &self.to_remove {
-                self.gbox.remove(r);
-            }
-
-            wws.sort_by_key(|e1| e1.get_x());
-            for (id, ww) in wws.into_iter().enumerate() {
-                ww.update_view();
-                self.gbox.reorder_child(&ww.gbox, id as i32);
-            }
-            self.gbox.show_all();
-
-            self.dirty = false;
-        }
-    }
-}
-
-pub struct WindowContainerManager {
-    pub stack: gtk::Stack,
-    pub workspace_containers: HashMap<WLWorkspaceId, WindowContainer>,
-    current_workspace_id: Option<WLWorkspaceId>,
-}
-
-impl WindowContainerManager {
-    pub fn new() -> AResult<Self> {
-        let stack = gtk::Stack::builder().build();
-
-        stack.add_named(
-            &gtk::Label::new(Some("This workspace's windows container is missing.")),
-            "missing",
-        );
-
-        let containers: HashMap<WLWindowId, WindowContainer> = Default::default();
-
-        Ok(Self {
-            stack,
-            workspace_containers: containers,
-            current_workspace_id: Default::default(),
-        })
-    }
-    pub fn on_workspace_overwrite(&mut self, workspace: &WLWorkspace) {
-        if workspace.is_focused {
-            self.current_workspace_id.replace(workspace.id);
-        }
-    }
-
-    pub fn on_workspace_delete(&mut self, workspace_id: &WLWindowId) {
-        if let Some(old) = self.workspace_containers.remove(workspace_id) {
-            self.stack.remove(&old.gbox);
+            output_name,
+            workspace_id: 0,
         }
     }
 
     pub fn on_window_overwrite(&mut self, window: &WLWindow) {
-        if window.is_focused {
-            if let Some(id) = window.workspace_id {
-                self.current_workspace_id.replace(id);
-            }
-        }
-        if let Some(container) = window
-            .get_workspace_id()
-            .and_then(|w| self.workspace_containers.get_mut(&w))
-        {
-            container.on_window_overwrite(window.clone());
+        let id = window.get_id();
+        let id: GString = gformat!("{}", id);
+        if let Some(win) = self.widget_map.get_mut(&id) {
+            self.dirty = self.dirty
+                || window
+                    .get_workspace_id()
+                    .is_some_and(|e| e == self.workspace_id);
+
+            let dirty = win.update_data(window.clone());
+            self.dirty = dirty || self.dirty;
         } else {
-            let mut container = WindowContainer::new(window.get_id());
-            container.on_window_overwrite(window.clone());
-            if let Some(id) = window.get_workspace_id() {
-                self.stack.add_named(&container.gbox, &id.to_string());
-                self.workspace_containers.insert(id, container);
-            }
+            let ww = WindowWidget::new(window.clone(), &self.icon_loader);
+            self.holder.add(&ww.widget);
+            self.widget_map.insert(id, ww);
+            self.dirty = true;
         }
     }
 
-    pub fn on_window_delete(&mut self, window_id: &WLWindowId) {
-        for (_, wc) in self.workspace_containers.iter_mut() {
-            wc.on_window_delete(*window_id);
+    pub fn on_window_delete(&mut self, window: &WLWindowId) {
+        if let Some(_) = self.widget_map.remove(&gformat!("{}", window)) {
+            self.dirty = true;
+        }
+    }
+
+    pub fn on_workspace_change(&mut self, workspace: &WLWorkspace) {
+        if workspace.is_focused()
+            && workspace
+                .get_monitor_id()
+                .is_some_and(|w| w == &self.output_name)
+        {
+            self.workspace_id = workspace.id;
+            self.dirty = true;
         }
     }
 
     pub fn update_view(&mut self) {
-        let stack = self.stack.clone();
+        let mut active_widgets: Vec<_> = self
+            .widget_map
+            .values_mut()
+            .filter(|ww| {
+                ww.window
+                    .get_workspace_id()
+                    .is_some_and(|id| id == self.workspace_id)
+            })
+            .collect();
 
-        if let Some(wc) = self
-            .current_workspace_id
-            .and_then(|e| self.workspace_containers.get_mut(&e))
-        {
-            wc.update_view();
-            let container = wc.gbox.clone();
-            idle_add_local_once(move || {
-                stack.set_visible_child(&container);
-                stack.show_all();
-            });
-        } else {
-            idle_add_local_once(move || {
-                stack.hide();
-            });
-        };
+        active_widgets.sort_by_key(|w| w.get_x());
+
+        let current_children = self.holder.children();
+        let active_widget_ptrs: HashSet<_> = active_widgets
+            .iter()
+            .map(|ww| ww.widget.clone().upcast::<Widget>())
+            .collect();
+
+        for child in current_children.iter() {
+            if !active_widget_ptrs.contains(child) {
+                self.holder.remove(child);
+            }
+        }
+
+        for (index, ww) in active_widgets.into_iter().enumerate() {
+            ww.update_view();
+
+            if !current_children.contains(&ww.widget.clone().upcast()) {
+                self.holder.pack_start(&ww.widget, false, false, 0);
+            }
+
+            self.holder.reorder_child(&ww.widget, index as i32);
+        }
+
+        self.holder.show_all();
+        self.dirty = false;
     }
 }
