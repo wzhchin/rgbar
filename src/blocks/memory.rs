@@ -1,10 +1,11 @@
-use std::cmp::min;
 use std::str::FromStr;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 use crate::prelude::*;
 use chin_tools::AResult;
 
-
+use human_bytes::human_bytes;
 
 use crate::window::WidgetShareInfo;
 use crate::util::gtk_icon_loader::StatusName;
@@ -15,7 +16,7 @@ use super::Block;
 
 #[derive(Clone)]
 pub enum MemoryOut {
-    MemoryUsedAndCache(usize, usize, usize), // USED / Cache / total
+    MemoryUsedAndCache(usize, usize, usize, usize, usize), // used, cache, total, swap_used, swap_total
 }
 
 #[derive(Clone)]
@@ -51,26 +52,16 @@ impl Block for MemoryBlock {
             let mem_used = mem_total - mem_state.mem_available * 1024;
             let mem_cache = mem_state.pagecache * 1024;
 
-            sender
-                .send(MemoryOut::MemoryUsedAndCache(
-                    mem_used, mem_cache, mem_total,
-                ))
-                .unwrap();
-
-            // dev note: difference between avail and free:
-            // https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=34e431b0ae398fc54ea69ff85ec700722c9da773
-            // same logic as htop
-            let _mem_avail = ((if mem_state.mem_available != 0 {
-                min(mem_state.mem_available, mem_state.mem_total)
-            } else {
-                mem_state.mem_free
-            }) as f64)
-                * 1024.0;
-
             let swap_total = mem_state.swap_total * 1024;
             let swap_free = mem_state.swap_free * 1024;
             let swap_cached = mem_state.swap_cached * 1024;
-            let _swap_used = swap_total - swap_free - swap_cached;
+            let swap_used = swap_total - swap_free - swap_cached;
+
+            sender
+                .send(MemoryOut::MemoryUsedAndCache(
+                    mem_used, mem_cache, mem_total, swap_used, swap_total,
+                ))
+                .unwrap();
 
             ControlFlow::Continue
         });
@@ -100,13 +91,39 @@ impl Block for MemoryBlock {
         holder.pack_start(&icon, false, false, 0);
         holder.pack_end(&chart.drawing_box, false, false, 0);
 
+        let tooltip_used = Rc::new(RefCell::new((0usize, 0usize, 0usize, 0usize)));
+        let tooltip_used_clone = tooltip_used.clone();
+        holder.set_has_tooltip(true);
+        holder.connect_query_tooltip(move |_widget, _x, _y, _keyboard, tooltip| {
+            let (used, total, swap_used, swap_total) = *tooltip_used_clone.borrow();
+            let mem_pct = if total > 0 { used * 100 / total } else { 0 };
+            let mut text = format!(
+                "MEM: {} / {} ({}%)",
+                human_bytes(used as f64),
+                human_bytes(total as f64),
+                mem_pct,
+            );
+            if swap_total > 0 {
+                let swap_pct = swap_used * 100 / swap_total;
+                text.push_str(&format!(
+                    "\nSWAP: {} / {} ({}%)",
+                    human_bytes(swap_used as f64),
+                    human_bytes(swap_total as f64),
+                    swap_pct,
+                ));
+            }
+            tooltip.set_text(Some(&text));
+            true
+        });
+
         MainContext::ref_thread_default().spawn_local(async move {
             loop {
                 if let Ok(msg) = receiver.recv().await {
                     match msg {
-                        MemoryOut::MemoryUsedAndCache(used, cache, total) => {
+                        MemoryOut::MemoryUsedAndCache(used, cache, total, swap_used, swap_total) => {
                             cache_columns.add_value(((cache * 100) / total) as f64);
                             mem_columns.add_value(((used * 100) / total) as f64);
+                            *tooltip_used.borrow_mut() = (used, total, swap_used, swap_total);
                         }
                     }
                 }

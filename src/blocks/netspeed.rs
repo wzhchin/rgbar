@@ -37,14 +37,12 @@ impl NetspeedBlock {
         let mut total_upload = 0;
 
         if let Ok(lines) = fileutil::read_lines(NET_DEV) {
-            // Consumes the iterator, returns an (Optional) String
             let reg = Regex::new(r"\s+").expect("Invalid regex");
             for line in lines.map_while(Result::ok) {
                 let fields = reg
                     .split(line.trim())
                     .map(|x| x.to_string())
                     .collect::<Vec<String>>();
-                // line.trim().split(" ").collect::<Vec<&str>>();
                 if fields.len() <= 10 {
                     continue;
                 }
@@ -58,9 +56,7 @@ impl NetspeedBlock {
 
                 let interface = &fields[0];
                 if Regex::new(r"^lo:?").unwrap().is_match(interface) ||
-                    // Created by python-based bandwidth manager "traffictoll".
                     Regex::new(r"^ifb[0-9]+:?").unwrap().is_match(interface) ||
-                    // Created by lxd container manager.
                     Regex::new(r"^lxdbr[0-9]+:?").unwrap().is_match(interface) ||
                     Regex::new(r"^virbr[0-9]+:?").unwrap().is_match(interface) ||
                     Regex::new(r"^br[0-9]+:?").unwrap().is_match(interface) ||
@@ -77,6 +73,33 @@ impl NetspeedBlock {
         }
 
         (total_download, total_upload)
+    }
+
+    fn get_active_connection_name() -> String {
+        let output = match std::process::Command::new("nmcli")
+            .args(["-t", "-f", "TYPE,NAME,DEVICE", "con", "show", "--active"])
+            .output()
+        {
+            Ok(o) => o,
+            Err(_) => return String::new(),
+        };
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            let parts: Vec<&str> = line.splitn(3, ':').collect();
+            if parts.len() < 2 {
+                continue;
+            }
+            let conn_type = parts[0];
+            let name = parts[1];
+            if conn_type == "802-11-wireless" {
+                return format!("󰤨 {}", name);
+            }
+            if conn_type == "802-3-ethernet" {
+                return format!("󰈀 {}", name);
+            }
+        }
+        String::new()
     }
 }
 
@@ -151,8 +174,14 @@ impl Block for NetspeedBlock {
 
         holder.add(&icon);
         holder.add(&chart.drawing_box);
-
         holder.add(&speed_label);
+
+        holder.set_has_tooltip(true);
+        holder.connect_query_tooltip(move |_widget, _x, _y, _keyboard, tooltip| {
+            let conn = Self::get_active_connection_name();
+            tooltip.set_text(Some(&conn));
+            true
+        });
 
         let mut mreceiver = self.dualchannel.get_out_receiver();
         MainContext::ref_thread_default().spawn_local(async move {
