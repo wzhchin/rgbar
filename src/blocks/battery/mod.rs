@@ -4,6 +4,7 @@ use crate::util::gtk_icon_loader::load_fixed_status_surface;
 use crate::util::timeutil::second_to_human;
 use crate::window::WidgetShareInfo;
 
+use self::bluetooth::BluetoothBatteryMonitor;
 use self::common::get_battery_info;
 #[cfg(feature = "ideapad")]
 use self::ideapad::{get_conservation_mode, ConvervationMode};
@@ -14,8 +15,10 @@ use crate::prelude::*;
 use batdiff::seconds_now;
 use batdiff::BatDiff;
 use chin_tools::AResult;
+use std::sync::{Arc, Mutex};
 
 mod batdiff;
+mod bluetooth;
 mod common;
 #[cfg(feature = "ideapad")]
 mod ideapad;
@@ -52,7 +55,6 @@ pub struct BatteryInfo {
 
 impl BatteryInfo {
     pub fn get_percent(&self) -> u8 {
-        // (self.energy_now * 100 / self.energy_full).try_into().unwrap()
         self.capacity
     }
 }
@@ -71,16 +73,19 @@ pub enum BatteryIn {}
 pub struct BatteryBlock {
     dualchannel: DualChannel<BatteryOut, BatteryIn>,
     init_bat_info: BatteryInfo,
+    bt_monitor: BluetoothBatteryMonitor,
 }
 
 impl BatteryBlock {
     pub fn new() -> AResult<Self> {
         let dualchannel = DualChannel::new(100);
         let init_bat_info = get_battery_info()?;
+        let bt_monitor = BluetoothBatteryMonitor::new();
 
         Ok(Self {
             dualchannel,
             init_bat_info,
+            bt_monitor,
         })
     }
 }
@@ -91,6 +96,7 @@ impl Block for BatteryBlock {
 
     fn run(&mut self) -> AResult<()> {
         let sender = self.dualchannel.get_out_sender();
+        self.bt_monitor.start();
 
         timeout_add_seconds(
             2,
@@ -166,6 +172,10 @@ impl Block for BatteryBlock {
             power_status_icon.set_from_surface(load_fixed_status_surface(mapped).as_ref());
         });
 
+        let bt_monitor = self.bt_monitor.clone();
+        let current_battery_info = Arc::new(Mutex::new(self.init_bat_info.clone()));
+
+        let current_battery_info_clone = current_battery_info.clone();
         let mut receiver = self.dualchannel.get_out_receiver();
         MainContext::ref_thread_default().spawn_local(async move {
             loop {
@@ -187,6 +197,10 @@ impl Block for BatteryBlock {
                             }
                         }
                         BatteryOut::BatteryInfo(bi) => {
+                            {
+                                let mut info = current_battery_info_clone.lock().unwrap();
+                                *info = bi.clone();
+                            }
                             bat_diff.check_percent(&bi, |percent, mapped| {
                                 tracing::info!("set battery");
                                 percent_label.set_label(&format!("{}%", percent));
@@ -214,6 +228,42 @@ impl Block for BatteryBlock {
             }
         });
 
+        let bt_monitor_tooltip = bt_monitor.clone();
+        let battery_info_tooltip = current_battery_info.clone();
+        holder.connect_query_tooltip(move |_widget, _x, _y, _keyboard, tooltip| {
+            let info = battery_info_tooltip.lock().unwrap();
+            let percent = info.capacity;
+            let icon = get_battery_icon(percent);
+            let mut text = format!("{}  {}  {}%", icon, info.name, percent);
+            drop(info);
+
+            let bt_batteries = bt_monitor_tooltip.get_batteries();
+            for bt in &bt_batteries {
+                text.push_str(&format!("\n󰂯  {}  {}%", bt.name, bt.percentage));
+            }
+
+            tooltip.set_text(Some(&text));
+            true
+        });
+        holder.set_has_tooltip(true);
+
         holder.upcast()
     }
 }
+
+fn get_battery_icon(percent: u8) -> &'static str {
+    match percent {
+        n if n >= 90 => "󰥈",
+        n if n >= 80 => "󰥅",
+        n if n >= 70 => "󰥄",
+        n if n >= 60 => "󰥃",
+        n if n >= 50 => "󰥂",
+        n if n >= 40 => "󰥁",
+        n if n >= 30 => "󰥀",
+        n if n >= 20 => "󰤿",
+        n if n >= 10 => "󰤾",
+        _ => "󰤾",
+    }
+}
+
+

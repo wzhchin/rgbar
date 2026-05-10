@@ -39,6 +39,8 @@ toml = "0.8.22"
 notify-rust = "4.11.7"
 log = "0.4.27"
 env_logger = "0.11.8"
+bluer = { version = "0.17", features = ["bluetoothd"] }
+tokio = { version = "1", features = ["rt-multi-thread", "time"] }
 
 [profile.release]
 lto = "thin"
