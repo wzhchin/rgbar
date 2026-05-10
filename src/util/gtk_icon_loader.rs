@@ -67,47 +67,58 @@ impl GtkIconLoader {
 
         let config = get_config();
         let config: &Option<ParsedConfig> = config.as_ref();
-        let config = config.as_ref()?;
 
-        let name = config
-            .icon
-            .alias
-            .iter()
-            .filter_map(|(key, v)| {
-                if v.iter().any(|n| n.to_lowercase() == name.to_lowercase()) {
-                    Some(key.as_str())
-                } else {
-                    None
-                }
-            })
-            .nth(0)
-            .unwrap_or(name);
+        let icon = config.as_ref().and_then(|cfg| {
+            let alias = cfg
+                .icon
+                .alias
+                .iter()
+                .filter_map(|(key, v)| {
+                    if v.iter().any(|n| n.to_lowercase() == name.to_lowercase()) {
+                        Some(key.as_str())
+                    } else {
+                        None
+                    }
+                })
+                .nth(0)
+                .unwrap_or(name);
 
-        let icon = config
-            .icon
-            .paths
-            .iter()
-            .filter_map(|e| {
-                let svg_path = PathBuf::new().join(e).join(format!("{}.svg", name));
-                if svg_path.exists() {
-                    read_to_string(svg_path)
-                        .ok()
-                        .and_then(|e| load_svg_into_pixbuf(&e, 22, 22).ok())
-                } else {
-                    None
-                }
-            })
-            .nth(0);
+            cfg.icon
+                .paths
+                .iter()
+                .filter_map(|e| {
+                    let svg_path = PathBuf::new().join(e).join(format!("{}.svg", alias));
+                    if svg_path.exists() {
+                        read_to_string(svg_path)
+                            .ok()
+                            .and_then(|e| load_svg_into_pixbuf(&e, 22, 22).ok())
+                    } else {
+                        None
+                    }
+                })
+                .nth(0)
+        });
+
+        let icon = icon.or_else(|| load_from_icon_theme(name));
 
         if let Some(pbf) = icon {
             self.cache
                 .borrow_mut()
                 .insert(name.to_lowercase(), pbf.clone());
-            self.cache.borrow().get(name).cloned()
+            Some(pbf)
         } else {
             None
         }
     }
+}
+
+fn load_from_icon_theme(name: &str) -> Option<Pixbuf> {
+    gtk::IconTheme::default().and_then(|theme| {
+        theme
+            .load_icon(name, 44, gtk::IconLookupFlags::empty())
+            .ok()
+            .flatten()
+    })
 }
 
 fn load_svg_into_pixbuf(
