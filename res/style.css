@@ -127,6 +127,23 @@ button {
   font-size: 8px;
 }
 
+/* Temp Monitor */
+.temp-monitor-label {
+  min-width: 28px;
+  font-size: 9px;
+  font-weight: bold;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+.temp-monitor-warn {
+  background-color: #e6a800;
+}
+
+.temp-monitor-critical {
+  background-color: #e63900;
+}
+
 .cpu-freq {
   font-size: 8px;
 }

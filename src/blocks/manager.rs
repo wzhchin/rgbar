@@ -2,7 +2,8 @@ use chin_tools::AResult;
 
 use super::{
     audio::PulseBlock, battery::BatteryBlock, cpu::CpuBlock, memory::MemoryBlock,
-    netspeed::NetspeedBlock, time::TimeBlock, wayland::WaylandBlock, Block,
+    netspeed::NetspeedBlock, temp::TempMonitorBlock, time::TimeBlock, wayland::WaylandBlock,
+    Block,
 };
 
 pub struct BlockManager {
@@ -13,6 +14,7 @@ pub struct BlockManager {
     pub memory_block: MemoryBlock,
     pub wayland_block: WaylandBlock,
     pub vol_block: PulseBlock,
+    pub temp_block: TempMonitorBlock,
 }
 
 impl BlockManager {
@@ -38,6 +40,9 @@ impl BlockManager {
         let mut wayland_block = WaylandBlock::new();
         wayland_block.run()?;
 
+        let mut temp_block = TempMonitorBlock::new();
+        temp_block.run()?;
+
         Ok(BlockManager {
             net_block,
             time_block,
@@ -46,6 +51,7 @@ impl BlockManager {
             memory_block,
             wayland_block,
             vol_block,
+            temp_block,
         })
     }
 }

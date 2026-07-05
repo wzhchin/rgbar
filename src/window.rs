@@ -85,6 +85,10 @@ impl RGBWindow {
         netspeed.style_context().add_class("block");
         bar.pack_end(&netspeed, false, false, 0);
 
+        let temp_monitor = bm.temp_block.widget(share_info);
+        temp_monitor.style_context().add_class("block");
+        bar.pack_end(&temp_monitor, false, false, 0);
+
         let wayland = bm.wayland_block.widget(share_info);
         bar.pack_start(&wayland, false, false, 0);
 
