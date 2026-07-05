@@ -65,9 +65,11 @@ impl RGBWindow {
         time.style_context().add_class("block");
         bar.pack_end(&time, false, false, 0);
 
-        let battery = bm.battery_block.widget(share_info);
-        battery.style_context().add_class("block");
-        bar.pack_end(&battery, false, false, 0);
+        if let Some(ref battery_block) = bm.battery_block {
+            let battery = battery_block.widget(share_info);
+            battery.style_context().add_class("block");
+            bar.pack_end(&battery, false, false, 0);
+        }
 
         let volume = bm.vol_block.widget(share_info);
         volume.style_context().add_class("block");

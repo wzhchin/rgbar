@@ -10,7 +10,7 @@ pub struct BlockManager {
     pub net_block: NetspeedBlock,
     pub time_block: TimeBlock,
     pub cpu_block: CpuBlock,
-    pub battery_block: BatteryBlock,
+    pub battery_block: Option<BatteryBlock>,
     pub memory_block: MemoryBlock,
     pub wayland_block: WaylandBlock,
     pub vol_block: PulseBlock,
@@ -28,8 +28,20 @@ impl BlockManager {
         let mut cpu_block = CpuBlock::new();
         cpu_block.run()?;
 
-        let mut battery_block = BatteryBlock::new()?;
-        battery_block.run()?;
+        let battery_block = match BatteryBlock::new() {
+            Ok(mut bb) => {
+                if let Err(e) = bb.run() {
+                    log::warn!("battery block run error: {e:?}");
+                    None
+                } else {
+                    Some(bb)
+                }
+            }
+            Err(e) => {
+                log::warn!("battery not available, skipping block: {e:?}");
+                None
+            }
+        };
 
         let mut memory_block = MemoryBlock::new();
         memory_block.run()?;

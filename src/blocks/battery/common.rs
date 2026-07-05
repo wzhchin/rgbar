@@ -1,4 +1,6 @@
-use chin_tools::AResult;
+use std::path::Path;
+
+use chin_tools::{aanyhow, AResult};
 
 use crate::util::fileutil;
 
@@ -9,6 +11,9 @@ use super::{BatteryInfo, PowerStatus};
 static POWER_INFO_PATH: &str = "/sys/class/power_supply/BATT/uevent";
 
 pub fn get_battery_info() -> AResult<BatteryInfo> {
+    if !Path::new(POWER_INFO_PATH).exists() {
+        return Err(aanyhow!("battery device not found at {POWER_INFO_PATH}"));
+    }
     read_event(POWER_INFO_PATH)
 }
 

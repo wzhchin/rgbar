@@ -117,7 +117,7 @@ impl Block for TempMonitorBlock {
                 if let Ok(msg) = receiver.recv().await {
                     match msg {
                         TempMonitorOut::Temp(temp) => {
-                            if temp < 20.0 {
+                            if temp < 60.0 {
                                 label_for_closure.set_visible(false);
                             } else {
                                 label_for_closure.set_visible(true);
