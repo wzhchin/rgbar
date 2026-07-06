@@ -30,8 +30,16 @@ pub struct IconConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Default, Serialize)]
+pub struct TempConfig {
+    pub always_show: Option<bool>,
+    pub warn: Option<f64>,
+    pub alert: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default, Serialize)]
 pub struct Config {
     pub icon_path: String,
+    pub temp: Option<TempConfig>,
 }
 
 #[derive(Debug, Clone)]

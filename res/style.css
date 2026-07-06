@@ -130,8 +130,7 @@ button {
 /* Temp Monitor */
 .temp-monitor-label {
   min-width: 28px;
-  font-size: 9px;
-  font-weight: bold;
+  font-size: 12px;
   padding: 0 4px;
   border-radius: 4px;
 }

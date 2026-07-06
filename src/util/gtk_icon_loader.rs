@@ -26,6 +26,7 @@ pub enum StatusName {
     CPU,
     RAM,
     WIFI,
+    Temperature,
 
     BatteryFull,
     BatteryHigh,
@@ -158,6 +159,7 @@ fn load_fixed_status_pixbuf(status_name: StatusName) -> Pixbuf {
         StatusName::CPU => include_surface!("cpu", BASE_SIZE, BASE_SIZE),
         StatusName::RAM => include_surface!("memory", BASE_SIZE * 6 / 5, BASE_SIZE * 6 / 5),
         StatusName::WIFI => include_surface!("wifi", BASE_SIZE, BASE_SIZE),
+        StatusName::Temperature => include_surface!("temp", BASE_SIZE, BASE_SIZE),
         StatusName::BatteryFull => {
             include_surface!("battery-full", BASE_SIZE * 11 / 7, BASE_SIZE)
         }
